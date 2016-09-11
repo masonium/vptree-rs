@@ -1,0 +1,8 @@
+[package]
+name = "vptree"
+version = "0.1.0"
+authors = ["Mason Smith <masonium@gmail.com>"]
+
+[dependencies]
+num = "0"
+rand = "0.3"

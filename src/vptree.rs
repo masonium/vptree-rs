@@ -9,34 +9,34 @@ use std::cmp::{Ord, PartialOrd, Ordering};
 use std::fmt::{Debug, Display};
 pub use num::Float;
 
-pub trait BoundedMetricItem<F: Float> {
+pub trait MetricItem<F: Float> {
     //// Return the standard bounded-distance transformation, for a
     //// given distance.
-    fn bounded_distance(a: &Self, b: &Self) -> F;
+    fn distance(&self, b: &Self) -> F;
 }
 
 // impl MetricItem for f32 {
 //     type Measure = f32;
 // }
 
-struct TaggedItem<F: Float, T: BoundedMetricItem<F>> {
+struct TaggedItem<F: Float, T: MetricItem<F>> {
     pub item: T,
     hist: Vec<F>
 }
 
 /// Randomly select a vantage point, and choose the point furthers
 /// from that point.
-fn select_vantage_point<F: Float, T: BoundedMetricItem<F>>(items: &Vec<TaggedItem<F, T>>) -> usize {
+fn select_vantage_point<F: Float, T: MetricItem<F>>(items: &Vec<TaggedItem<F, T>>) -> usize {
     let mut rng = rand::thread_rng();
 
     let range = Range::new(0, items.len());
     let i = range.ind_sample(&mut rng);
     let random_item = &items[i];
 
-    let min_d = (T::bounded_distance(&random_item.item, &random_item.item), i);
+    let min_d = (F::zero(), i);
 
     items.iter().enumerate().fold(min_d, |acc, (i, y)| {
-        let d = T::bounded_distance(&random_item.item, &y.item);
+        let d = T::distance(&random_item.item, &y.item);
         if d < acc.0 { (d, i) } else { acc }
     }).1
 }
@@ -44,7 +44,7 @@ fn select_vantage_point<F: Float, T: BoundedMetricItem<F>>(items: &Vec<TaggedIte
 pub trait Scalar  : Float + Debug + Display {}
 impl<T: Float + Debug + Display> Scalar for T {}
 
-struct VPNode<F: Scalar, T: BoundedMetricItem<F>> {
+struct VPNode<F: Scalar, T: MetricItem<F>> {
     inner: Option<Box<VPNode<F, T>>>,
     outer: Option<Box<VPNode<F, T>>>,
     center: T,
@@ -84,14 +84,7 @@ impl<'a, F: Scalar, T: 'a> Ord for HeapElem<'a, F, T> {
     }
 }
 
-// impl<'a, F: Scalar, T: 'a> PartialOrd for HeapElem<'a, F, T> {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         self.dist.parital_cmp(other.dist);
-//     }
-// }
-
-
-impl<F: Scalar, T: BoundedMetricItem<F>> VPNode<F, T> {
+impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
     // new
     pub fn new(mut items: Vec<TaggedItem<F, T>>) -> VPNode<F, T> {
         if items.len() == 1 {
@@ -108,7 +101,7 @@ impl<F: Scalar, T: BoundedMetricItem<F>> VPNode<F, T> {
 
         // sort the items by distance from the selected item.
         for mut ti in items.iter_mut() {
-            let d = T::bounded_distance(&ti.item, &vp.item);
+            let d = T::distance(&ti.item, &vp.item);
             ti.hist.push(d);
         }
 
@@ -128,7 +121,7 @@ impl<F: Scalar, T: BoundedMetricItem<F>> VPNode<F, T> {
     pub fn nearest_neighbors<'b, 'a: 'b>(&'a self, obj: &T, n: usize, traversed: &mut usize,
                                          heap: &'b mut BinaryHeap<HeapElem<'a, F, Self>>)  {
         *traversed += 1;
-        let d_center = T::bounded_distance(obj, &self.center);
+        let d_center = T::distance(obj, &self.center);
 
         let elem = HeapElem::new(d_center, self);
 
@@ -164,11 +157,11 @@ impl<F: Scalar, T: BoundedMetricItem<F>> VPNode<F, T> {
 }
 
 /// implement a Vp-s tree
-pub struct VPTree<F: Scalar, T: BoundedMetricItem<F>> {
+pub struct VPTree<F: Scalar, T: MetricItem<F>> {
     root: VPNode<F, T>
 }
 
-impl<F: Scalar, T: BoundedMetricItem<F>> VPTree<F, T> {
+impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
     /// Construct a new vantage point tree from a set of elements.
     pub fn new(items: Vec<T>) -> Option<VPTree<F, T>> {
         let n = items.len();

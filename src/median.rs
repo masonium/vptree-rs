@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use rand::{thread_rng, Rng, ThreadRng};
+use rand::{thread_rng, Rng};
 use std::fmt::{Display, Debug};
 
 /// Return <= for PartialOrd types.

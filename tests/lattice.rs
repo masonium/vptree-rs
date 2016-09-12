@@ -1,6 +1,6 @@
 extern crate vptree;
 
-use vptree::{BoundedMetricItem, VPTree};
+use vptree::{MetricItem, VPTree};
 
 struct Point {
     x: f32,
@@ -12,8 +12,8 @@ impl Point {
     }
 }
 
-impl BoundedMetricItem<f32> for Point {
-    fn bounded_distance(p: &Self, q: &Self) -> f32 {
+impl MetricItem<f32> for Point {
+    fn distance(p: &Self, q: &Self) -> f32 {
         let dx = p.x - q.x;
         let dy = p.y - q.y;
         (dx*dx + dy*dy).sqrt()
@@ -25,7 +25,7 @@ fn point_check() {
     let a = Point::new(0.0, 0.0);
     let b = Point::new(1.0, 0.0);
 
-    assert_eq!(Point::bounded_distance(&a, &b), 1.0);
+    assert_eq!(Point::distance(&a, &b), 1.0);
 }
 
 fn lattice_points(n: usize) -> Vec<Point> {

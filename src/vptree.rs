@@ -6,24 +6,13 @@ use rand::distributions::{Range, IndependentSample};
 use std::borrow::Borrow;
 use std::collections::{BinaryHeap};
 use std::cmp::{Ord, PartialOrd, Ordering};
+use std::fmt::{Debug, Display};
 pub use num::Float;
-
-
-pub trait MetricItem<F: Float> {
-    fn distance(a: &Self, b: &Self) -> F;
-}
 
 pub trait BoundedMetricItem<F: Float> {
     //// Return the standard bounded-distance transformation, for a
     //// given distance.
     fn bounded_distance(a: &Self, b: &Self) -> F;
-}
-
-impl<X: MetricItem<f32>> BoundedMetricItem<f32> for X  {
-    fn bounded_distance(a: &Self, b: &Self) -> f32 {
-        let d = X::distance(a, b);
-        d / (1.0 + d)
-    }
 }
 
 // impl MetricItem for f32 {
@@ -52,66 +41,57 @@ fn select_vantage_point<F: Float, T: BoundedMetricItem<F>>(items: &Vec<TaggedIte
     }).1
 }
 
-struct VPNode<F: Float, T: BoundedMetricItem<F>> {
+pub trait Scalar  : Float + Debug + Display {}
+impl<T: Float + Debug + Display> Scalar for T {}
+
+struct VPNode<F: Scalar, T: BoundedMetricItem<F>> {
     inner: Option<Box<VPNode<F, T>>>,
     outer: Option<Box<VPNode<F, T>>>,
     center: T,
     mu: Option<F>
 }
 
-struct HeapElem<'a, F: Float, T: 'a> {
+struct HeapElem<'a, F: Scalar, T: 'a> {
     dist: F,
     item: &'a T
 }
 
-impl<'a, F: Float, T: 'a> HeapElem<'a, F, T> {
+impl<'a, F: Scalar, T: 'a> HeapElem<'a, F, T> {
     fn new(d: F, i: &'a T) -> Self{
         HeapElem { dist: d, item: i }
     }
 }
 
-impl<'a, F: Float, T: 'a> PartialOrd for HeapElem<'a, F, T> {
+impl<'a, F: Scalar, T: 'a> PartialOrd for HeapElem<'a, F, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.dist.partial_cmp(&other.dist)
     }
 }
 
 
-impl<'a, F: Float, T: 'a> PartialEq for HeapElem<'a, F, T> {
+impl<'a, F: Scalar, T: 'a> PartialEq for HeapElem<'a, F, T> {
     fn eq(&self, other: &Self) -> bool {
         self.dist.eq(&other.dist)
     }
 }
 
-impl<'a, F: Float, T: 'a> Eq for HeapElem<'a, F, T> {
+impl<'a, F: Scalar, T: 'a> Eq for HeapElem<'a, F, T> {
 }
 
-impl<'a, F: Float, T: 'a> Ord for HeapElem<'a, F, T> {
+impl<'a, F: Scalar, T: 'a> Ord for HeapElem<'a, F, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-// impl<'a, F: Float, T: 'a> PartialOrd for HeapElem<'a, F, T> {
+// impl<'a, F: Scalar, T: 'a> PartialOrd for HeapElem<'a, F, T> {
 //     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
 //         self.dist.parital_cmp(other.dist);
 //     }
 // }
 
 
-/// Push elements on to a max heap, preserving the n-closest
-/// elements.
-fn push_up_to_max<'a, 'b: 'a, F: Float, T: BoundedMetricItem<F>>(heap: &'b mut BinaryHeap<HeapElem<'a, F, T>>,
-                                                                 n: usize,
-                                                                 elem: HeapElem<'a, F, T>) {
-    if heap.len() < n {
-        heap.push(elem);
-    } else if heap.peek().unwrap().dist > elem.dist {
-        heap.replace(elem);
-    }
-}
-
-impl<F: Float, T: BoundedMetricItem<F>> VPNode<F, T> {
+impl<F: Scalar, T: BoundedMetricItem<F>> VPNode<F, T> {
     // new
     pub fn new(mut items: Vec<TaggedItem<F, T>>) -> VPNode<F, T> {
         if items.len() == 1 {
@@ -132,7 +112,7 @@ impl<F: Float, T: BoundedMetricItem<F>> VPNode<F, T> {
             ti.hist.push(d);
         }
 
-        // split the items into
+        // split the items into sectinos, where one section is less than the other
         items.sort_by(|a, b| a.hist.last().unwrap().partial_cmp(b.hist.last().unwrap()).unwrap());
 
         let right_items = items.split_off((n + 1) / 2);
@@ -143,59 +123,52 @@ impl<F: Float, T: BoundedMetricItem<F>> VPNode<F, T> {
         VPNode { inner: inner, outer: outer, center: vp.item, mu: Some(mu)  }
     }
 
-    pub fn nearest_neighbors<'b, 'a: 'b>(&'a self, obj: &T, n: usize, heap: &'b mut BinaryHeap<HeapElem<'a, F, Self>>) {
-        let d = T::bounded_distance(obj, &self.center);
+    /// Push the nearest neighbors of this tree onto the binary heap,
+    /// replacing existing further-away elemtns as necessary.
+    pub fn nearest_neighbors<'b, 'a: 'b>(&'a self, obj: &T, n: usize, traversed: &mut usize,
+                                         heap: &'b mut BinaryHeap<HeapElem<'a, F, Self>>)  {
+        *traversed += 1;
+        let d_center = T::bounded_distance(obj, &self.center);
 
-        let elem = HeapElem::new(d, self);
+        let elem = HeapElem::new(d_center, self);
+
+        // Push the element on if it is closer than the current furthest element.
         if heap.len() < n {
             heap.push(elem);
         } else if heap.peek().unwrap().dist > elem.dist {
-            heap.replace(elem);
+            heap.pop();
+            heap.push(elem);
         }
 
-        if let Some(ref inner) = self.inner {
-            let x: &Self = inner.borrow();
-            x.nearest_neighbors(obj, n, heap);
-        }
-        if let Some(ref outer) = self.outer {
-            let x: &Self = outer.borrow();
-            x.nearest_neighbors(obj, n, heap);
-        }
-    }
+        // If we have an inner or outer node.
+        if let Some(mu) = self.mu {
+            let mut nodes = [(&self.inner, true), (&self.outer, false)];
 
-    /// Return the closest element to the input element.
-    pub fn nearest_neighbor(&self, obj: &T) -> (&T, F) {
-        unimplemented!();
-        // let d = T::bounded_distance(obj, &self.center);
-        // let pair = (&self.center, d);
-        // match self.mu {
-        //     None => pair,
-        //     Some(dist) => {
-        //         // If we're closer to the center than the edge, we
-        //         // know we don't have to look on the outer section.
-        //         if d * (F::one() + F::one())  < dist {
-        //             match self.inner {
-        //                 Some(ref inner) => {
-        //                     let node: &VPNode<_, _> = inner.borrow();
-        //                     let inner_nn = node.nearest_neighbor(obj);
-        //                     if inner_nn.1 < d { inner_nn } else { pair }
-        //                 },
-        //                 None => pair
-        //             }
-        //         } else {
-        //             pair
-        //         }
-        //     }
-        // }
+            // Traverse the outer node first if we're outside the ring.
+            if d_center > mu {
+                nodes.swap(0, 1);
+            }
+
+            for &(node_opt, is_inner) in &nodes {
+                if let Some(ref node) = *node_opt {
+                    let d_max = heap.peek().unwrap().dist;
+                    let possible_new_elem = (is_inner && d_max > d_center - mu) || (!is_inner && d_max > mu - d_center);
+                    if possible_new_elem {
+                        let x: &Self = node.borrow();
+                        x.nearest_neighbors(obj, n, traversed, heap);
+                    }
+                }
+            }
+        }
     }
 }
 
 /// implement a Vp-s tree
-pub struct VPTree<F: Float, T: BoundedMetricItem<F>> {
+pub struct VPTree<F: Scalar, T: BoundedMetricItem<F>> {
     root: VPNode<F, T>
 }
 
-impl<F: Float, T: BoundedMetricItem<F>> VPTree<F, T> {
+impl<F: Scalar, T: BoundedMetricItem<F>> VPTree<F, T> {
     /// Construct a new vantage point tree from a set of elements.
     pub fn new(items: Vec<T>) -> Option<VPTree<F, T>> {
         let n = items.len();
@@ -210,13 +183,21 @@ impl<F: Float, T: BoundedMetricItem<F>> VPTree<F, T> {
     }
 
     /// find the nearest neighbor
-    pub fn nearest_neighbor(&self, obj: &T) -> (&T, F) {
-        self.root.nearest_neighbor(obj)
-    }
-}
+    pub fn nearest_neighbor(&self, obj: &T) -> &T {
+        let mut heap = BinaryHeap::with_capacity(1);
+        let mut traversed: usize = 0;
+        self.root.nearest_neighbors(obj, 1, &mut traversed, &mut heap);
 
-/// Re-arrange the list such that item k is k-th in the list, and all items > k are
-fn quick_select<T: PartialOrd + Copy>(s: &mut [T], k: usize) -> usize {
-    // If the range is smaller than some limit, brute-force the median.
-    unimplemented!();
+        let he = heap.pop().unwrap();
+        &he.item.center
+    }
+
+    /// Find the n nearest neighbors.
+    pub fn nearest_neighbors(&self, obj: &T, n: usize, traversed: &mut usize) -> Vec<&T> {
+        let mut heap = BinaryHeap::with_capacity(n);
+        *traversed = 0;
+        self.root.nearest_neighbors(obj, n, traversed, &mut heap);
+
+        heap.into_sorted_vec().into_iter().map(|x| &x.item.center).collect()
+    }
 }

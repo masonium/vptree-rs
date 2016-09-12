@@ -118,9 +118,8 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
 
     /// Push the nearest neighbors of this tree onto the binary heap,
     /// replacing existing further-away elemtns as necessary.
-    pub fn nearest_neighbors<'b, 'a: 'b>(&'a self, obj: &T, n: usize, traversed: &mut usize,
+    pub fn nearest_neighbors<'b, 'a: 'b>(&'a self, obj: &T, n: usize,
                                          heap: &'b mut BinaryHeap<HeapElem<'a, F, Self>>)  {
-        *traversed += 1;
         let d_center = T::distance(obj, &self.center);
 
         let elem = HeapElem::new(d_center, self);
@@ -148,11 +147,42 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
                     let possible_new_elem = (is_inner && d_max > d_center - mu) || (!is_inner && d_max > mu - d_center);
                     if possible_new_elem {
                         let x: &Self = node.borrow();
-                        x.nearest_neighbors(obj, n, traversed, heap);
+                        x.nearest_neighbors(obj, n, heap);
                     }
                 }
             }
         }
+    }
+
+    /// Return all elements within a given radius of the node.
+    pub fn within_radius<'a, 'b: 'a>(&'b self, obj: &T, radius: F, v: &mut Vec<HeapElem<'a, F, Self>>) {
+        let d_center = T::distance(obj, &self.center);
+
+        // Push the element on if it is closer than the current furthest element.
+        if d_center < radius {
+            v.push(HeapElem::new(d_center, &self));
+        }
+
+        // If we have an inner or outer node.
+        if let Some(mu) = self.mu {
+            let mut nodes = [(&self.inner, true), (&self.outer, false)];
+
+            // Traverse the outer node first if we're outside the ring.
+            if d_center > mu {
+                nodes.swap(0, 1);
+            }
+
+            for &(node_opt, is_inner) in &nodes {
+                if let Some(ref node) = *node_opt {
+                    let possible_new_elem = (is_inner && radius > d_center - mu) || (!is_inner && radius > mu - d_center);
+                    if possible_new_elem {
+                        let x: &Self = node.borrow();
+                        x.within_radius(obj, radius, v);
+                    }
+                }
+            }
+        }
+
     }
 }
 
@@ -175,22 +205,39 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
         }
     }
 
-    /// find the nearest neighbor
+    /// Return all elements with a given radius of the target.
+    pub fn within_radius(&self, obj: &T, radius: F, sorted: bool) -> Vec<&T> {
+        let mut elems = Vec::new();
+        self.root.within_radius(obj, radius, &mut elems);
+
+        if sorted {
+            elems.sort();
+        }
+
+        elems.into_iter().map(|x| &x.item.center).collect()
+    }
+
+    /// Find the nearest neighbor.
     pub fn nearest_neighbor(&self, obj: &T) -> &T {
         let mut heap = BinaryHeap::with_capacity(1);
-        let mut traversed: usize = 0;
-        self.root.nearest_neighbors(obj, 1, &mut traversed, &mut heap);
+        self.root.nearest_neighbors(obj, 1, &mut heap);
 
         let he = heap.pop().unwrap();
         &he.item.center
     }
 
-    /// Find the n nearest neighbors.
-    pub fn nearest_neighbors(&self, obj: &T, n: usize, traversed: &mut usize) -> Vec<&T> {
+    /// Find the n nearest neighbors. IF sorted is true, the results
+    /// will be sorted from nearest to furthest.
+    pub fn nearest_neighbors(&self, obj: &T, n: usize, sorted: bool) -> Vec<&T> {
         let mut heap = BinaryHeap::with_capacity(n);
-        *traversed = 0;
-        self.root.nearest_neighbors(obj, n, traversed, &mut heap);
+        self.root.nearest_neighbors(obj, n, &mut heap);
 
-        heap.into_sorted_vec().into_iter().map(|x| &x.item.center).collect()
+        let v = if sorted {
+            heap.into_sorted_vec()
+        } else {
+            heap.into_vec()
+        };
+        v.into_iter().map(|x| &x.item.center).collect()
+
     }
 }

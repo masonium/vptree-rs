@@ -13,9 +13,9 @@ impl Point {
 }
 
 impl MetricItem<f32> for Point {
-    fn distance(p: &Self, q: &Self) -> f32 {
-        let dx = p.x - q.x;
-        let dy = p.y - q.y;
+    fn distance(&self, q: &Self) -> f32 {
+        let dx = self.x - q.x;
+        let dy = self.y - q.y;
         (dx*dx + dy*dy).sqrt()
     }
 }
@@ -47,8 +47,7 @@ fn lattice_vpn() {
     // assert_eq!(x.x, 4.0);
     // assert_eq!(x.y, 4.0);
 
-    let ps = tree.nearest_neighbors(&Point::new(4.46, 4.4), 4, &mut t);
-    println!("nodes traversed: {}", t);
+    let ps = tree.nearest_neighbors(&Point::new(4.46, 4.4), 4, true);
     assert_eq!(ps.len(), 4);
     assert_eq!(ps[0].x, 4.0);
     assert_eq!(ps[0].y, 4.0);

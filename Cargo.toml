@@ -6,3 +6,4 @@ authors = ["Mason Smith <masonium@gmail.com>"]
 [dependencies]
 num = "0"
 rand = "0.3"
+order-stat = "*"

@@ -8,6 +8,7 @@ use std::collections::{BinaryHeap};
 use std::cmp::{Ord, PartialOrd, Ordering};
 use std::fmt::{Debug, Display};
 pub use num::Float;
+use order_stat::kth_by;
 
 pub trait MetricItem<F: Float> {
     //// Return the standard bounded-distance transformation, for a
@@ -21,7 +22,7 @@ pub trait MetricItem<F: Float> {
 
 struct TaggedItem<F: Float, T: MetricItem<F>> {
     pub item: T,
-    hist: Vec<F>
+    pub dist: F
 }
 
 /// Randomly select a vantage point, and choose the point furthers
@@ -101,15 +102,17 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
 
         // sort the items by distance from the selected item.
         for mut ti in items.iter_mut() {
-            let d = T::distance(&ti.item, &vp.item);
-            ti.hist.push(d);
+            ti.dist = T::distance(&ti.item, &vp.item);
         }
 
-        // split the items into sectinos, where one section is less than the other
-        items.sort_by(|a, b| a.hist.last().unwrap().partial_cmp(b.hist.last().unwrap()).unwrap());
+        // split the items into sections, where one section is less than the other
+        if n > 2 {
+            kth_by(&mut items, n/2, |a, b| a.dist.partial_cmp(&b.dist).unwrap());
+        }
+        //items.sort_by(|a, b| a.dist.partial_cmp(&b.dist).unwrap());
 
         let right_items = items.split_off((n + 1) / 2);
-        let mu = *(items.last().unwrap().hist.last().unwrap());
+        let mu = items.last().unwrap().dist;
         let inner = if items.is_empty() { None } else { Some(Box::new(VPNode::new(items))) };
         let outer = if right_items.is_empty() { None } else { Some(Box::new(VPNode::new(right_items))) };
 
@@ -198,7 +201,7 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
         let ln = (n as f64).log2().ceil() as usize;
         if n > 0 {
             let tagged_items: Vec<TaggedItem<F, T>> = items.into_iter()
-                .map(|x| TaggedItem { item: x, hist: Vec::with_capacity(ln) }).collect();
+                .map(|x| TaggedItem { item: x, dist: F::zero() }).collect();
             Some(VPTree { root: VPNode::new(tagged_items) })
         } else {
             None

@@ -1,8 +1,7 @@
 extern crate num;
 extern crate rand;
+extern crate order_stat;
 
 pub mod vptree;
-pub mod median;
 
 pub use vptree::{VPTree, MetricItem};
-pub use median::small_median;

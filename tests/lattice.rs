@@ -2,6 +2,7 @@ extern crate vptree;
 
 use vptree::{MetricItem, VPTree};
 
+#[derive(Debug)]
 struct Point {
     x: f32,
     y: f32
@@ -41,11 +42,6 @@ fn lattice_vpn() {
     let points: Vec<Point> = lattice_points(20);
 
     let tree = VPTree::new(points).unwrap();
-
-    let mut t: usize = 0;
-    // let x = tree.nearest_neighbor(&Point::new(4.1, 4.0));
-    // assert_eq!(x.x, 4.0);
-    // assert_eq!(x.y, 4.0);
 
     let ps = tree.nearest_neighbors(&Point::new(4.46, 4.4), 4, true);
     assert_eq!(ps.len(), 4);

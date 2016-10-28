@@ -61,11 +61,15 @@ fn select_vantage_point<F: MetricValue, T: MetricItem<F>>(items: &Vec<TaggedItem
 pub trait Scalar : MetricValue + Debug + Display {}
 impl<T: MetricValue + Debug + Display> Scalar for T {}
 
+struct InnerNode<F: Float, N> {
+    pub mu: F,
+    pub inner: Box<N>,
+    pub outer: Option<Box<N>>
+}
+
 struct VPNode<F: Scalar, T: MetricItem<F>> {
-    inner: Option<Box<VPNode<F, T>>>,
-    outer: Option<Box<VPNode<F, T>>>,
+    contents: Option<InnerNode<F, VPNode<F, T>>>,
     center: T,
-    mu: Option<F>
 }
 
 struct HeapElem<'a, F: Scalar, T: 'a> {
@@ -105,17 +109,17 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
     // new
     pub fn new(mut items: Vec<TaggedItem<F, T>>) -> VPNode<F, T> {
         if items.len() == 1 {
-            return VPNode { inner: None,
-                            outer: None,
-                            center: items.pop().unwrap().item,
-                            mu: None };
+            return VPNode { contents: None,
+                            center: items.pop().unwrap().item
+            };
         }
 
         let sel_index = select_vantage_point(&items);
 
         let vp = items.swap_remove(sel_index);
 
-        // sort the items by distance from the selected item.
+        // Compute the new distance from the vantage point for all of
+        // the items.
         for mut ti in items.iter_mut() {
             ti.dist = T::distance(&ti.item, &vp.item);
         }
@@ -134,11 +138,21 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
         }
 
         let right_items = items.split_off((n+1)/2);
-        let mu = items.last().unwrap().dist;
-        let inner = if items.is_empty() { None } else { Some(Box::new(VPNode::new(items))) };
-        let outer = if right_items.is_empty() { None } else { Some(Box::new(VPNode::new(right_items))) };
 
-        VPNode { inner: inner, outer: outer, center: vp.item, mu: Some(mu)  }
+        match items.last().map(|x| x.dist) {
+            Some(dist) => {
+                let mu = dist;
+                let inner = Box::new(VPNode::new(items));
+                let outer = if right_items.is_empty() { None } else { Some(Box::new(VPNode::new(right_items))) };
+                VPNode { center: vp.item, contents: Some(InnerNode {
+                    mu: mu,
+                    inner: inner,
+                    outer: outer })}
+            },
+            None => {
+                VPNode { center: vp.item, contents: None }
+            }
+        }
     }
 
     /// Push the nearest neighbors of this tree onto the binary heap,
@@ -158,8 +172,10 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
         }
 
         // If we have an inner or outer node.
-        if let Some(mu) = self.mu {
-            let mut nodes = [(&self.inner, true), (&self.outer, false)];
+        if let Some(ref contents) = self.contents {
+            let mu = contents.mu;
+            let some_inner = Some(&contents.inner);
+            let mut nodes = [(some_inner, true), (contents.outer.as_ref(), false)];
 
             // Traverse the outer node first if we're outside the ring.
             if d_center > mu {
@@ -167,7 +183,7 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
             }
 
             for &(node_opt, is_inner) in &nodes {
-                if let Some(ref node) = *node_opt {
+                if let Some(node) = node_opt {
                     let d_max = heap.peek().unwrap().dist;
                     let possible_new_elem = (is_inner && d_max > d_center - mu) || (!is_inner && d_max > mu - d_center);
                     if possible_new_elem {
@@ -189,8 +205,10 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
         }
 
         // If we have an inner or outer node.
-        if let Some(mu) = self.mu {
-            let mut nodes = [(&self.inner, true), (&self.outer, false)];
+        if let Some(ref contents) = self.contents {
+            let mu = contents.mu;
+            let some_inner = Some(&contents.inner);
+            let mut nodes = [(some_inner, true), (contents.outer.as_ref(), false)];
 
             // Traverse the outer node first if we're outside the ring.
             if d_center > mu {
@@ -198,8 +216,7 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
             }
 
             for &(node_opt, is_inner) in &nodes {
-                if let Some(ref node) = *node_opt {
-                    //let r = radius * 1.01;
+                if let Some(node) = node_opt {
                     let possible_new_elem = (is_inner && radius > d_center - mu) || (!is_inner && radius > mu - d_center);
                     if possible_new_elem {
                         let x: &Self = node.borrow();
@@ -231,6 +248,9 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
     }
 
     /// Return all elements with a given radius of the target.
+    ///
+    /// If `sorted` is true, the elements are sorted by ascending
+    /// distance from the query point,
     pub fn within_radius(&self, obj: &T, radius: F, sorted: bool) -> Vec<&T> {
         let mut elems = Vec::new();
         self.root.within_radius(obj, radius, &mut elems);
@@ -268,18 +288,22 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
 }
 impl<F: Scalar, T: MetricItem<F> + Debug> VPNode<F, T> {
     pub fn dump(&self, prefix: &str) -> String {
-        let mut s: String = format!("{}elem: {:?}, mu: {:?}\n", prefix, self.center, self.mu);
-        let new_prefix = format!("{}  ", prefix);
-        if let Some(ref inner) = self.inner {
-            let ref n: VPNode<F, T> = *inner.borrow();
+        let mut s: String = format!("{}elem: {:?}", prefix, self.center);
+        if let Some(ref c) = self.contents {
+            s += &format!(", mu: {}\n", c.mu);
+            let new_prefix = format!("{}  ", prefix);
+
+            let ref n: VPNode<F, T> = *c.inner.borrow();
             s += &format!("{}{}", prefix, n.dump(&new_prefix));
-        }
-        if let Some(ref outer) = self.outer {
-            let ref n: VPNode<F, T> = *outer.borrow();
-            s += &format!("{}{}", prefix, n.dump(&new_prefix));
+
+            if let Some(ref outer) = c.outer {
+                let ref n: VPNode<F, T> = *outer.borrow();
+                s += &format!("{}{}", prefix, n.dump(&new_prefix));
+            }
         }
 
         s
+
     }
 }
 

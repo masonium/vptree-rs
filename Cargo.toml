@@ -4,6 +4,7 @@ version = "0.2.0"
 authors = ["Mason Smith <masonium@gmail.com>"]
 description = "vantage point tree implementation"
 keywords = ["vptree", "vantage point", "metric tree"]
+license = "MIT"
 
 [dependencies]
 num = "0"

@@ -52,6 +52,11 @@ fn select_vantage_point<F: Float, T: MetricItem<F>>(items: &Vec<TaggedItem<F, T>
     }).1
 }
 
+/// Subtree split for non-leaf nodes.
+///
+/// Vantage point trees in our implementation are left (inner) biased,
+/// so every non-leaf node has an inner subtree and an optional outer
+/// subtree.
 struct InnerNode<F: Float, N> {
     pub mu: F,
     pub inner: Box<N>,
@@ -63,6 +68,8 @@ struct VPNode<F: Float, T: MetricItem<F>> {
     center: T,
 }
 
+/// A `HeapElem` is a wrapper for items, used when collecting
+/// nearest-neighbor query results.
 struct HeapElem<'a, F: Float, T: 'a> {
     dist: F,
     item: &'a T
@@ -80,7 +87,6 @@ impl<'a, F: Float, T: 'a> PartialOrd for HeapElem<'a, F, T> {
     }
 }
 
-
 impl<'a, F: Float, T: 'a> PartialEq for HeapElem<'a, F, T> {
     fn eq(&self, other: &Self) -> bool {
         self.dist.eq(&other.dist)
@@ -97,7 +103,7 @@ impl<'a, F: Float, T: 'a> Ord for HeapElem<'a, F, T> {
 }
 
 impl<F: Float, T: MetricItem<F>> VPNode<F, T> {
-    // new
+    /// Creates a new node from the set of `items`.
     pub fn new(mut items: Vec<TaggedItem<F, T>>) -> VPNode<F, T> {
         if items.len() == 1 {
             return VPNode { contents: None,
@@ -315,6 +321,7 @@ impl <F: Float + Display, T: MetricItem<F> + Debug> VPTree<F, T> {
     /// Return a pretty-printed recursive description of the entire tree.
     ///
     /// This function is mainly intended for debugging.
+    #[inline]
     pub fn dump(&self) -> String {
         self.root.dump("")
     }

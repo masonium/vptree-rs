@@ -3,8 +3,14 @@ name = "vptree"
 version = "0.2.0"
 authors = ["Mason Smith <masonium@gmail.com>"]
 description = "vantage point tree implementation"
+
+repository = "https://github.com/masonium/vptree-rs"
+
 keywords = ["vptree", "vantage point", "metric tree"]
 license = "MIT"
+readme = "README.md"
+
+include = ["README.md", "LICENSE", "Cargo.toml", "**/*.rs"]
 
 [dependencies]
 num = "0"

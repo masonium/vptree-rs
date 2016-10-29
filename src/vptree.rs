@@ -7,40 +7,34 @@ use std::borrow::Borrow;
 use std::collections::{BinaryHeap};
 use std::cmp::{Ord, PartialOrd, Ordering};
 use std::fmt::{Debug, Display};
-use std::ops::Mul;
-pub use num::Float;
+use num::Float;
 use order_stat::kth_by;
-
-pub trait MetricValue: Float + Mul<f32, Output=Self> {
-}
-impl<T: Float + Mul<f32, Output=T>> MetricValue for T {
-}
 
 /// Defines a metric for items in a metric space.
 ///
 /// A metric is a function on a set S, with the following properties.
-/// - f(x, y) >= 0, with equality iff x == y
-/// - f(x, y) = f(y, x)
-/// - f(x, y) + f(y, z) <= f(x, z)
+///
+///  - f(x, y) >= 0, with equality iff x == y
+///  - f(x, y) = f(y, x)
+///  - f(x, y) + f(y, z) <= f(x, z)
 ///
 /// A VP-Tree can only be constructed by a set forming a metric. If
 /// the `distance` function does not satisfy the metric conditions, a
 /// vp-tree constructed from the elements will not be correct.
-pub trait MetricItem<F: MetricValue> {
+pub trait MetricItem<F: Float> {
     /// Return the distance to another element in the metric space.
     ///
     /// The `distance` function must satisfy the metric properties.
-    /// (See: )
     fn distance(&self, b: &Self) -> F;
 }
 
-struct TaggedItem<F: MetricValue, T: MetricItem<F>> {
+struct TaggedItem<F: Float, T: MetricItem<F>> {
     pub item: T,
     pub dist: F
 }
 
 /// Return a randomly-selected vantage point.
-fn select_vantage_point<F: MetricValue, T: MetricItem<F>>(items: &Vec<TaggedItem<F, T>>) -> usize {
+fn select_vantage_point<F: Float, T: MetricItem<F>>(items: &Vec<TaggedItem<F, T>>) -> usize {
     // Randomly select a point.
     let mut rng = rand::thread_rng();
 
@@ -58,54 +52,51 @@ fn select_vantage_point<F: MetricValue, T: MetricItem<F>>(items: &Vec<TaggedItem
     }).1
 }
 
-pub trait Scalar : MetricValue + Debug + Display {}
-impl<T: MetricValue + Debug + Display> Scalar for T {}
-
 struct InnerNode<F: Float, N> {
     pub mu: F,
     pub inner: Box<N>,
     pub outer: Option<Box<N>>
 }
 
-struct VPNode<F: Scalar, T: MetricItem<F>> {
+struct VPNode<F: Float, T: MetricItem<F>> {
     contents: Option<InnerNode<F, VPNode<F, T>>>,
     center: T,
 }
 
-struct HeapElem<'a, F: Scalar, T: 'a> {
+struct HeapElem<'a, F: Float, T: 'a> {
     dist: F,
     item: &'a T
 }
 
-impl<'a, F: Scalar, T: 'a> HeapElem<'a, F, T> {
+impl<'a, F: Float, T: 'a> HeapElem<'a, F, T> {
     fn new(d: F, i: &'a T) -> Self{
         HeapElem { dist: d, item: i }
     }
 }
 
-impl<'a, F: Scalar, T: 'a> PartialOrd for HeapElem<'a, F, T> {
+impl<'a, F: Float, T: 'a> PartialOrd for HeapElem<'a, F, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.dist.partial_cmp(&other.dist)
     }
 }
 
 
-impl<'a, F: Scalar, T: 'a> PartialEq for HeapElem<'a, F, T> {
+impl<'a, F: Float, T: 'a> PartialEq for HeapElem<'a, F, T> {
     fn eq(&self, other: &Self) -> bool {
         self.dist.eq(&other.dist)
     }
 }
 
-impl<'a, F: Scalar, T: 'a> Eq for HeapElem<'a, F, T> {
+impl<'a, F: Float, T: 'a> Eq for HeapElem<'a, F, T> {
 }
 
-impl<'a, F: Scalar, T: 'a> Ord for HeapElem<'a, F, T> {
+impl<'a, F: Float, T: 'a> Ord for HeapElem<'a, F, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap()
     }
 }
 
-impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
+impl<F: Float, T: MetricItem<F>> VPNode<F, T> {
     // new
     pub fn new(mut items: Vec<TaggedItem<F, T>>) -> VPNode<F, T> {
         if items.len() == 1 {
@@ -229,13 +220,23 @@ impl<F: Scalar, T: MetricItem<F>> VPNode<F, T> {
     }
 }
 
-/// implement a Vp-s tree
-pub struct VPTree<F: Scalar, T: MetricItem<F>> {
+/// Vantage Point Tree
+///
+/// A vantage-point tree stores a set of points to be later queried
+/// against.
+pub struct VPTree<F: Float, T: MetricItem<F>> {
     root: VPNode<F, T>
 }
 
-impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
+impl<F: Float, T: MetricItem<F>> VPTree<F, T> {
     /// Construct a new vantage point tree from a set of elements.
+    ///
+    /// Returns `None` if `items` is an empty vector.
+    ///
+    /// `new` makes no effort to check that the `MetricItem` trait
+    /// implementation actually defines a matric. If the metric is not
+    /// defined correctly, the resulting tree may not yield correct
+    /// answers for later queries.
     pub fn new(items: Vec<T>) -> Option<VPTree<F, T>> {
         let n = items.len();
         if n > 0 {
@@ -251,9 +252,9 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
     ///
     /// If `sorted` is true, the elements are sorted by ascending
     /// distance from the query point,
-    pub fn within_radius(&self, obj: &T, radius: F, sorted: bool) -> Vec<&T> {
+    pub fn within_radius(&self, query: &T, radius: F, sorted: bool) -> Vec<&T> {
         let mut elems = Vec::new();
-        self.root.within_radius(obj, radius, &mut elems);
+        self.root.within_radius(query, radius, &mut elems);
 
         if sorted {
             elems.sort();
@@ -262,20 +263,24 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
         elems.into_iter().map(|x| &x.item.center).collect()
     }
 
-    /// Find the nearest neighbor.
-    pub fn nearest_neighbor(&self, obj: &T) -> &T {
+    /// Find the closets point in tree to `query`.
+    pub fn nearest_neighbor(&self, query: &T) -> &T {
         let mut heap = BinaryHeap::with_capacity(1);
-        self.root.nearest_neighbors(obj, 1, &mut heap);
+        self.root.nearest_neighbors(query, 1, &mut heap);
 
         let he = heap.pop().unwrap();
         &he.item.center
     }
 
-    /// Find the n nearest neighbors. IF sorted is true, the results
-    /// will be sorted from nearest to furthest.
-    pub fn nearest_neighbors(&self, obj: &T, n: usize, sorted: bool) -> Vec<&T> {
-        let mut heap = BinaryHeap::with_capacity(n);
-        self.root.nearest_neighbors(obj, n, &mut heap);
+    /// Find the `k` points in the tree closest to `query`.
+    ///
+    /// If `sorted` is true, the returned points will be sorted by
+    /// distance to `query`.  If `k` is larger than the total number
+    /// of points in the tree, all of the points in the tree are
+    /// returned.
+    pub fn nearest_neighbors(&self, query: &T, k: usize, sorted: bool) -> Vec<&T> {
+        let mut heap = BinaryHeap::with_capacity(k);
+        self.root.nearest_neighbors(query, k, &mut heap);
 
         let v = if sorted {
             heap.into_sorted_vec()
@@ -286,7 +291,8 @@ impl<F: Scalar, T: MetricItem<F>> VPTree<F, T> {
 
     }
 }
-impl<F: Scalar, T: MetricItem<F> + Debug> VPNode<F, T> {
+
+impl<F: Float + Display, T: MetricItem<F> + Debug> VPNode<F, T> {
     pub fn dump(&self, prefix: &str) -> String {
         let mut s: String = format!("{}elem: {:?}", prefix, self.center);
         if let Some(ref c) = self.contents {
@@ -301,13 +307,14 @@ impl<F: Scalar, T: MetricItem<F> + Debug> VPNode<F, T> {
                 s += &format!("{}{}", prefix, n.dump(&new_prefix));
             }
         }
-
         s
-
     }
 }
 
-impl <F: Scalar, T: MetricItem<F> + Debug> VPTree<F, T> {
+impl <F: Float + Display, T: MetricItem<F> + Debug> VPTree<F, T> {
+    /// Return a pretty-printed recursive description of the entire tree.
+    ///
+    /// This function is mainly intended for debugging.
     pub fn dump(&self) -> String {
         self.root.dump("")
     }

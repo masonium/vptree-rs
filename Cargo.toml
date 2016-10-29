@@ -2,8 +2,10 @@
 name = "vptree"
 version = "0.2.0"
 authors = ["Mason Smith <masonium@gmail.com>"]
+description = "vantage point tree implementation"
+keywords = ["vptree", "vantage point", "metric tree"]
 
 [dependencies]
 num = "0"
 rand = "0.3"
-order-stat = "*"
+order-stat = "0"

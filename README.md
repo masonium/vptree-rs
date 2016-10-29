@@ -1,4 +1,4 @@
-# vptree-rs #
+# vptree-rs [![Build Status](https://travis-ci.org/masonium/vptree-rs.svg?branch=master)](https://travis-ci.org/masonium/vptree-rs) #
 `vptree-rs`is an implementation of vantage point trees in rust.
 
 Vantage Point trees are a metric tree data structure, used for

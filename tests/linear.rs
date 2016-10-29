@@ -11,11 +11,12 @@ impl MetricItem<f32> for Point {
     }
 }
 
+
 #[test]
-fn test_harmonic() {
+fn test_linear() {
     let mut done = false;
     for n in 10..101 {
-        let points: Vec<_> = (1..n+1).map(|x| Point(1.0 / (x as f32))).collect();
+        let points: Vec<_> = (0..n+1).map(|x| Point(x as f32/ n as f32)).collect();
 
         let vp = VPTree::new(points.iter().cloned().collect());
         assert!(vp.is_some());
